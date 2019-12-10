@@ -3,6 +3,7 @@ import styled from 'styled-components'
 import { VotesDict, Election } from '@votingworks/ballot-encoder'
 
 import Loading from '../components/Loading'
+import Tracker from '../components/Tracker'
 import Main, { MainChild } from '../components/Main'
 import PrintedBallot from '../components/PrintedBallot'
 import Prose from '../components/Prose'
@@ -13,6 +14,8 @@ import buildBallot from '../utils/buildBallot'
 import { Printer } from '../utils/printer'
 import isEmptyObject from '../utils/isEmptyObject'
 import printBallotOrCurrentPage from '../utils/printBallotOrCurrentPage'
+
+import encryptAndGetTracker from '../endToEnd'
 
 const Graphic = styled.img`
   margin: 0 auto -1rem;
@@ -49,6 +52,7 @@ const PrintOnlyScreen = ({
   let printerTimer = useRef(0)
   const [okToPrint, setOkToPrint] = useState(true)
   const [isPrinted, updateIsPrinted] = useState(false)
+  const [trackerString, setTrackerString] = useState('')
   const isCardVotesEmpty = isEmptyObject(votes)
 
   const isReadyToPrint =
@@ -60,7 +64,12 @@ const PrintOnlyScreen = ({
     !isPrinted
 
   const printBallot = useCallback(async () => {
+    // get the tracker first
+    const tracker = await encryptAndGetTracker(votes)
+    setTrackerString(tracker)
+
     const isUsed = await markVoterCardPrinted()
+
     /* istanbul ignore else */
     if (isUsed) {
       await printBallotOrCurrentPage(
@@ -154,7 +163,7 @@ const PrintOnlyScreen = ({
             />
           </p>
           <h1>
-            <Loading>Printing your official ballot</Loading>
+            <Loading>Printing your official ballot & tracker</Loading>
           </h1>
         </React.Fragment>
       )
@@ -184,13 +193,16 @@ const PrintOnlyScreen = ({
         </Main>
       </Screen>
       {isReadyToPrint && (
-        <PrintedBallot
-          ballotStyleId={ballotStyleId}
-          election={election}
-          isLiveMode={isLiveMode}
-          precinctId={precinctId}
-          votes={votes}
-        />
+        <React.Fragment>
+          <PrintedBallot
+            ballotStyleId={ballotStyleId}
+            election={election}
+            isLiveMode={isLiveMode}
+            precinctId={precinctId}
+            votes={votes}
+          />
+          <Tracker election={election} tracker={trackerString} />
+        </React.Fragment>
       )}
     </React.Fragment>
   )
