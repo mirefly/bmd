@@ -52,6 +52,10 @@ import InvalidCardScreen from './pages/InvalidCardScreen'
 import InsertCardScreen from './pages/InsertCardScreen'
 import PollWorkerScreen from './pages/PollWorkerScreen'
 import PrintOnlyScreen from './pages/PrintOnlyScreen'
+import SetupCardReaderPage from './pages/SetupCardReaderPage'
+import SetupPrinterPage from './pages/SetupPrinterPage'
+import SetupPrinterErrorPage from './pages/SetupPrinterErrorPage'
+import SetupPowerPage from './pages/SetupPowerPage'
 import UnconfiguredScreen from './pages/UnconfiguredScreen'
 import UsedCardScreen from './pages/UsedCardScreen'
 import { getBallotStyle, getContests, getZeroTally } from './utils/election'
@@ -88,6 +92,11 @@ interface SharedState {
   appPrecinctId: string
   ballotsPrintedCount: number
   election: OptionalElection
+  hasCardReaderAttached: boolean
+  hasChargerAttached: boolean
+  hasLowBattery: boolean
+  hasPrinterAttached: boolean
+  hasPrinterError: boolean
   isFetchingElection: boolean
   isLiveMode: boolean
   isPollsOpen: boolean
@@ -121,6 +130,7 @@ class AppRoot extends React.Component<Props, State> {
   private machineIdAbortController = new AbortController()
 
   private cardPoller?: Poller
+  private statusPoller?: Poller
   private lastVoteUpdateAt = 0
   private lastVoteSaveToCardAt = 0
   private cardWriteInterval = 0
@@ -152,6 +162,11 @@ class AppRoot extends React.Component<Props, State> {
     appPrecinctId: '',
     ballotsPrintedCount: 0,
     election: undefined,
+    hasCardReaderAttached: true,
+    hasChargerAttached: true,
+    hasLowBattery: true,
+    hasPrinterAttached: true,
+    hasPrinterError: false,
     isFetchingElection: false,
     isLiveMode: false,
     isPollsOpen: false,
@@ -456,6 +471,37 @@ class AppRoot extends React.Component<Props, State> {
     return true
   }
 
+  public startStatusPolling = () => {
+    /* istanbul ignore else */
+    if (!this.statusPoller) {
+      this.statusPoller = IntervalPoller.start(
+        GLOBALS.CARD_POLLING_INTERVAL,
+        async () => {
+          try {
+            // Possible implementation
+            // const cardReader = await this.props.cardReader.status()
+            // const battery = await this.props.battery.status()
+            // const printer = await this.props.printer.status()
+            // this.setState({
+            //   hasCardReaderAttached: cardReader.connected,
+            //   hasChargerAttached: battery.charging,
+            //   hasLowBattery: battery.charged < 0.5,
+            //   hasPrinterAttached: printer.connected,
+            //   hasPrinterError: printer.error,
+            // })
+          } catch (error) {
+            this.stopStatusPolling() // Assume backend is unavailable.
+          }
+        }
+      )
+    }
+  }
+
+  public stopStatusPolling = () => {
+    this.statusPoller && this.statusPoller.stop()
+    this.statusPoller = undefined
+  }
+
   public componentDidMount = () => {
     const election = this.getElection()
     const { ballotStyleId, precinctId } = this.getBallotActivation()
@@ -497,12 +543,14 @@ class AppRoot extends React.Component<Props, State> {
     this.setMachineId()
     this.startShortValueReadPolling()
     this.startLongValueWritePolling()
+    this.startStatusPolling()
   }
 
   public componentWillUnmount = /* istanbul ignore next - triggering keystrokes issue - https://github.com/votingworks/bmd/issues/62 */ () => {
     this.machineIdAbortController.abort()
     document.removeEventListener('keydown', handleGamepadKeyboardEvent)
     this.stopShortValueReadPolling()
+    this.stopStatusPolling()
   }
 
   public setMachineId = async () => {
@@ -793,11 +841,30 @@ class AppRoot extends React.Component<Props, State> {
       isVoterCardPrinted,
       isRecentVoterPrint,
       machineId,
+      hasCardReaderAttached,
+      hasChargerAttached,
+      hasLowBattery,
+      hasPrinterAttached,
+      hasPrinterError,
       precinctId,
       tally,
       userSettings,
       votes,
     } = this.state
+    if (hasLowBattery && !hasChargerAttached) {
+      return <SetupPowerPage setUserSettings={this.setUserSettings} />
+    }
+    if (!hasCardReaderAttached) {
+      return <SetupCardReaderPage setUserSettings={this.setUserSettings} />
+    }
+    if (appMode.isVxPrint) {
+      if (!hasPrinterAttached) {
+        return <SetupPrinterPage setUserSettings={this.setUserSettings} />
+      }
+      if (hasPrinterError) {
+        return <SetupPrinterErrorPage setUserSettings={this.setUserSettings} />
+      }
+    }
     if (isClerkCardPresent) {
       return (
         <ClerkScreen
